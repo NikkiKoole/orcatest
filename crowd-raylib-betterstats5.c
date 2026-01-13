@@ -13,6 +13,10 @@
 //  - Agents sorted by grid cell for spatial coherency
 //  - Avoidance always enabled (no death spiral)
 //  - Speed-relative avoidance (fixes slow agent stuck problem)
+//
+// Y-SORTING:
+//  - Visible agents sorted by Y for correct 2.5D draw order
+//  - Uses insertion sort (fast for mostly-sorted data frame-to-frame)
 
 #include "raylib.h"
 #include <math.h>
@@ -22,7 +26,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define AGENT_COUNT 100000  // try 50000 later
+#define AGENT_COUNT 1000
 
 #define WORLD_W 4000.0f
 #define WORLD_H 4000.0f
@@ -35,23 +39,23 @@
 
 // ---- npc.gd-ish tuning ----
 #define AVOID_RADIUS         40.0f
-#define AVOID_STRENGTH_SCALE 0.5f   // Multiplier for speed-relative avoidance
+#define AVOID_STRENGTH_SCALE 0.5f
 #define AVOID_MAX_NEIGHBORS  10
 
-#define STUCK_THRESHOLD      1.5f    // Increased from 1.0
+#define STUCK_THRESHOLD      1.5f
 #define WIGGLE_STRENGTH      40.0f
-#define PROGRESS_TOLERANCE   0.15f   // Relaxed from 0.30
-#define STUCK_RECOVERY_RATE  1.0f    // Increased from 0.50
+#define PROGRESS_TOLERANCE   0.15f
+#define STUCK_RECOVERY_RATE  1.0f
 
 #define MAX_SPEED_MULTIPLIER 1.30f
 
 // ---- perf knobs ----
-#define CELL_SIZE        (AVOID_RADIUS * 0.5f) // smaller cells => fewer agents per cell
-#define AVOID_MAX_SCAN   48                    // cap total candidates scanned
-#define AVOID_PERIOD     3                     // compute avoidance every N frames per agent
+#define CELL_SIZE        (AVOID_RADIUS * 0.5f)
+#define AVOID_MAX_SCAN   48
+#define AVOID_PERIOD     3
 
 // ---- profiler knobs ----
-#define PROF_SMOOTH_ALPHA 0.10 // EMA smoothing for ms numbers (0.05..0.20)
+#define PROF_SMOOTH_ALPHA 0.10
 
 typedef struct Agent {
     Vector2 pos;
@@ -65,7 +69,7 @@ typedef struct Agent {
     float lastDist;
     Vector2 wiggleDir;
 
-    Vector2 avoidCache; // cached avoidance for staggering
+    Vector2 avoidCache;
 } Agent;
 
 // ---------------- vector helpers ----------------
@@ -112,7 +116,6 @@ static void BuildGridBuckets(const Agent* agents, int N,
                              int* cellCountArr, int* cellStart, int* cellWrite,
                              int* agentCell, int* cellAgents)
 {
-    // Count agents per cell
     for (int c = 0; c < cellCount; c++) cellCountArr[c] = 0;
 
     for (int i = 0; i < N; i++) {
@@ -125,16 +128,13 @@ static void BuildGridBuckets(const Agent* agents, int N,
         cellCountArr[idx]++;
     }
 
-    // Prefix sum into start offsets
     cellStart[0] = 0;
     for (int c = 0; c < cellCount; c++) {
         cellStart[c + 1] = cellStart[c] + cellCountArr[c];
     }
 
-    // Copy starts into write cursors
     for (int c = 0; c < cellCount; c++) cellWrite[c] = cellStart[c];
 
-    // Scatter agent indices into the big contiguous list
     for (int i = 0; i < N; i++) {
         int idx = agentCell[i];
         cellAgents[cellWrite[idx]++] = i;
@@ -147,11 +147,9 @@ static void SortAgentsByCell(Agent* agents, int N,
                              int* agentCell, int* cellAgents,
                              int* cellStart)
 {
-    // Allocate temporary storage
     Agent* tempAgents = (Agent*)MemAlloc((size_t)N * sizeof(Agent));
     int* oldToNew = (int*)MemAlloc((size_t)N * sizeof(int));
 
-    // Reorder agents by cell, so agents in same cell are contiguous
     int writePos = 0;
     for (int cell = 0; cell < cellCount; cell++) {
         int start = cellStart[cell];
@@ -165,12 +163,10 @@ static void SortAgentsByCell(Agent* agents, int N,
         }
     }
 
-    // Copy sorted agents back
     for (int i = 0; i < N; i++) {
         agents[i] = tempAgents[i];
     }
 
-    // Update cellAgents with new indices
     for (int cell = 0; cell < cellCount; cell++) {
         int start = cellStart[cell];
         int end = cellStart[cell + 1];
@@ -181,7 +177,6 @@ static void SortAgentsByCell(Agent* agents, int N,
         }
     }
 
-    // Update agentCell array
     for (int i = 0; i < N; i++) {
         int cx = (int)(agents[i].pos.x * CELL_SIZE);
         int cy = (int)(agents[i].pos.y * CELL_SIZE);
@@ -192,6 +187,76 @@ static void SortAgentsByCell(Agent* agents, int N,
 
     MemFree(tempAgents);
     MemFree(oldToNew);
+}
+
+// ---------------- Y-SORT for 2.5D rendering ----------------
+// Row-bucket approach: O(n) bucketing + tiny sorts per row
+#define YBAND_HEIGHT 32.0f  // pixels per band - tune this
+
+static void SortDrawOrderByYBands(const Agent* agents, int* drawOrder, int count,
+                                   float minY, float maxY,
+                                   int* bandCounts, int* bandStarts, int* tempOrder) {
+    float range = maxY - minY;
+    if (range < 1.0f) range = 1.0f;
+
+    int numBands = (int)ceilf(range / YBAND_HEIGHT);
+    if (numBands < 1) numBands = 1;
+    if (numBands > 4096) numBands = 4096;  // sanity cap
+
+    float invBandH = (float)numBands / range;
+
+    // Count agents per band
+    for (int b = 0; b < numBands; b++) bandCounts[b] = 0;
+
+    for (int i = 0; i < count; i++) {
+        int idx = drawOrder[i];
+        float y = agents[idx].pos.y;
+        int band = (int)((y - minY) * invBandH);
+        if (band < 0) band = 0;
+        if (band >= numBands) band = numBands - 1;
+        bandCounts[band]++;
+    }
+
+    // Prefix sum for band starts
+    bandStarts[0] = 0;
+    for (int b = 0; b < numBands; b++) {
+        bandStarts[b + 1] = bandStarts[b] + bandCounts[b];
+    }
+
+    // Reset counts as write cursors
+    for (int b = 0; b < numBands; b++) bandCounts[b] = bandStarts[b];
+
+    // Scatter into temp array by band
+    for (int i = 0; i < count; i++) {
+        int idx = drawOrder[i];
+        float y = agents[idx].pos.y;
+        int band = (int)((y - minY) * invBandH);
+        if (band < 0) band = 0;
+        if (band >= numBands) band = numBands - 1;
+        tempOrder[bandCounts[band]++] = idx;
+    }
+
+    // Copy back - agents now grouped by band, drawn top to bottom
+    for (int i = 0; i < count; i++) {
+        drawOrder[i] = tempOrder[i];
+    }
+
+    // Optional: insertion sort within each band (bands are small!)
+    for (int b = 0; b < numBands; b++) {
+        int start = bandStarts[b];
+        int end = bandStarts[b + 1];
+        // Insertion sort this small range
+        for (int i = start + 1; i < end; i++) {
+            int key = drawOrder[i];
+            float keyY = agents[key].pos.y;
+            int j = i - 1;
+            while (j >= start && agents[drawOrder[j]].pos.y > keyY) {
+                drawOrder[j + 1] = drawOrder[j];
+                j--;
+            }
+            drawOrder[j + 1] = key;
+        }
+    }
 }
 
 static Vector2 ComputeAvoidanceBucket(const Agent* agents, int self,
@@ -246,7 +311,6 @@ static Vector2 ComputeAvoidanceBucket(const Agent* agents, int self,
                 int j = cellAgents[t];
                 if (j == self) continue;
 
-                // Hard cap on raw candidates scanned (regardless of distance)
                 scanned++;
                 if (scanned >= AVOID_MAX_SCAN) {
                     hitScanCap = true;
@@ -261,7 +325,6 @@ static Vector2 ComputeAvoidanceBucket(const Agent* agents, int self,
                 float dsq = vlen2(toSelf);
                 if (dsq <= 1e-10f || dsq >= r2) continue;
 
-                // normalized(toSelf) * ((1 - dist/r)^2)
                 float invDist = 1.0f / sqrtf(dsq);
                 float dist = dsq * invDist;
 
@@ -298,8 +361,8 @@ static inline double EMA(double prev, double cur, double alpha) {
     return (prev == 0.0) ? cur : (prev + alpha * (cur - prev));
 }
 static void DrawTextShadow(const char *text, int x, int y, int size, Color col) {
-    DrawText(text, x + 1, y + 1, size, BLACK); // shadow
-    DrawText(text, x, y, size, col);           // main
+    DrawText(text, x + 1, y + 1, size, BLACK);
+    DrawText(text, x, y, size, col);
 }
 
 int main(void) {
@@ -308,11 +371,11 @@ int main(void) {
 
     char title[256];
     snprintf(title, sizeof(title),
-             "Raylib crowd: separation + bucket grid + accurate profiler + CACHE OPT | agents: %d",
+             "Raylib crowd: separation + bucket grid + Y-sort | agents: %d",
              AGENT_COUNT);
 
     InitWindow(screenW, screenH, title);
-    Texture2D agentTex = LoadTexture("agent.png");
+     Texture2D agentTex = LoadTexture("agent.png");
     SetTargetFPS(60);
 
     srand((unsigned)time(NULL));
@@ -327,7 +390,7 @@ int main(void) {
     for (int i = 0; i < AGENT_COUNT; i++) {
         agents[i].pos  = RandGoal();
         agents[i].goal = RandGoal();
-        agents[i].speed = Randf(40.0f, 120.0f);  // BACK TO RANDOM SPEEDS
+        agents[i].speed = Randf(40.0f, 120.0f);
         agents[i].wait = 0.0f;
 
         agents[i].vel = (Vector2){0,0};
@@ -351,23 +414,30 @@ int main(void) {
     int* agentCell    = (int*)MemAlloc((size_t)AGENT_COUNT * sizeof(int));
     int* cellAgents   = (int*)MemAlloc((size_t)AGENT_COUNT * sizeof(int));
 
+    // Y-sort draw order array (persists across frames for incremental sorting)
+    int* drawOrder = (int*)MemAlloc((size_t)AGENT_COUNT * sizeof(int));
+    int* tempOrder = (int*)MemAlloc((size_t)AGENT_COUNT * sizeof(int));  // for band sort
+    int* bandCounts = (int*)MemAlloc(4097 * sizeof(int));  // max bands + 1
+    int* bandStarts = (int*)MemAlloc(4097 * sizeof(int));
+    int visibleCount = 0;
+
     int radCells = (int)ceilf(AVOID_RADIUS / CELL_SIZE);
     if (radCells < 1) radCells = 1;
 
     bool avoidanceOn = false;
     bool drawAgents = true;
     bool cullDraw = true;
+    bool ySortOn = true;  // Toggle Y-sorting with Y key
     uint32_t frame = 0;
 
     const float arriveEps2 = ARRIVE_EPS * ARRIVE_EPS;
 
-    // last frame raw ms (includes EndDrawing)
     double last_ms_frame=0, last_ms_grid=0, last_ms_update=0, last_ms_draw=0, last_ms_swap=0, last_ms_avoidKernel_est=0;
+    double last_ms_ysort = 0;
 
-    // profiler EMAs (ms)
     double ema_frame=0, ema_grid=0, ema_update=0, ema_draw=0, ema_swap=0, ema_avoidKernel=0;
+    double ema_ysort = 0;
 
-    // last frame counters
     uint32_t last_avoidCalls = 0;
     double   last_avgScan = 0.0;
     double   last_avgFound = 0.0;
@@ -375,6 +445,7 @@ int main(void) {
     uint32_t last_maxFound = 0;
     uint32_t last_scanCapHits = 0;
     uint32_t last_neighborCapHits = 0;
+    int last_visibleCount = 0;
 
     while (!WindowShouldClose()) {
         frame++;
@@ -388,8 +459,8 @@ int main(void) {
         if (IsKeyPressed(KEY_V)) avoidanceOn = !avoidanceOn;
         if (IsKeyPressed(KEY_R)) drawAgents = !drawAgents;
         if (IsKeyPressed(KEY_C)) cullDraw = !cullDraw;
+        if (IsKeyPressed(KEY_Y)) ySortOn = !ySortOn;
 
-        // Camera controls
         float panSpeed = 800.0f / cam.zoom;
         if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))  cam.target.x -= panSpeed * dt;
         if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) cam.target.x += panSpeed * dt;
@@ -406,7 +477,6 @@ int main(void) {
         cam.target.x = fminf(fmaxf(cam.target.x, 0.0f), WORLD_W);
         cam.target.y = fminf(fmaxf(cam.target.y, 0.0f), WORLD_H);
 
-        // Per-frame counters (this frame)
         uint32_t avoidCalls = 0;
         uint64_t avoidScannedTotal = 0;
         uint64_t avoidFoundTotal = 0;
@@ -415,11 +485,9 @@ int main(void) {
         uint32_t scanCapHits = 0;
         uint32_t neighborCapHits = 0;
 
-        // Kernel timing sample
         uint32_t avoidKernelTimedCalls = 0;
         double avoidKernelSeconds = 0.0;
 
-        // Grid build (only if avoidance ON)
         double tGrid0 = GetTime();
         if (avoidanceOn) {
             BuildGridBuckets(agents, AGENT_COUNT, gridW, gridH, cellCount,
@@ -427,7 +495,6 @@ int main(void) {
                              cellCountArr, cellStart, cellWrite,
                              agentCell, cellAgents);
 
-            // CACHE OPTIMIZATION: Sort agents every second for spatial coherency
             if ((frame % 60) == 0) {
                 SortAgentsByCell(agents, AGENT_COUNT, gridW, gridH, cellCount,
                                 agentCell, cellAgents, cellStart);
@@ -435,13 +502,11 @@ int main(void) {
         }
         double tGrid1 = GetTime();
 
-        // Update agents
         double tUpd0 = GetTime();
 
         for (int i = 0; i < AGENT_COUNT; i++) {
             Agent* a = &agents[i];
 
-            // waiting
             if (a->wait > 0.0f) {
                 a->wait -= dt;
                 if (a->wait <= 0.0f) {
@@ -457,7 +522,6 @@ int main(void) {
                 continue;
             }
 
-            // arrival check
             Vector2 to = vsub(a->goal, a->pos);
             float dist2 = vlen2(to);
             if (dist2 <= arriveEps2) {
@@ -471,7 +535,6 @@ int main(void) {
                 continue;
             }
 
-            // TRUE baseline path when avoidance is OFF:
             if (!avoidanceOn) {
                 float invDist = 1.0f / sqrtf(dist2);
                 float dist = dist2 * invDist;
@@ -487,12 +550,10 @@ int main(void) {
                 continue;
             }
 
-            // avoidance ON path:
             float invDist = 1.0f / sqrtf(dist2);
             float dist = dist2 * invDist;
             Vector2 desiredDir = vmul(to, invDist);
 
-            // progress-based stuck detection
             float progress = a->lastDist - dist;
             float expected = a->speed * dt * PROGRESS_TOLERANCE;
 
@@ -504,7 +565,6 @@ int main(void) {
             }
             a->lastDist = dist;
 
-            // ALWAYS compute avoidance (no death spiral!)
             bool computeNewAvoidance = (((frame + (uint32_t)i) % AVOID_PERIOD) == 0);
 
             Vector2 avoidance = (Vector2){0,0};
@@ -512,7 +572,6 @@ int main(void) {
                 int scanned = 0, found = 0;
                 bool hitScan = false, hitFound = false;
 
-                // Time 1/64th of avoidance calls
                 bool timeThis = (((frame + (uint32_t)i) & 63u) == 0u);
                 double tk0 = 0.0;
                 if (timeThis) tk0 = GetTime();
@@ -538,27 +597,21 @@ int main(void) {
             }
             avoidance = a->avoidCache;
 
-            // Add wiggle when stuck, but don't replace avoidance
             Vector2 wiggle = (Vector2){0,0};
             if (a->stuck > STUCK_THRESHOLD) {
                 if (vlen2(a->wiggleDir) < 1e-6f) a->wiggleDir = RandDir();
-                // Scale wiggle by how stuck we are (more stuck = more wiggle)
                 float wiggleMult = fminf((a->stuck - STUCK_THRESHOLD) * 0.5f, 1.0f);
                 wiggle = vmul(a->wiggleDir, WIGGLE_STRENGTH * wiggleMult);
             }
 
-            // Combine ALL forces with SPEED-RELATIVE AVOIDANCE
             Vector2 vel = (Vector2){0,0};
             vel = vadd(vel, vmul(desiredDir, a->speed));
 
-            // KEY FIX: Scale avoidance with agent's speed
-            // This gives slow and fast agents proportional "pushing power"
             float avoidScale = a->speed * AVOID_STRENGTH_SCALE;
             vel = vadd(vel, vmul(avoidance, avoidScale));
 
-            vel = vadd(vel, wiggle);  // Add wiggle, don't replace
+            vel = vadd(vel, wiggle);
 
-            // Let stuck agents move faster to escape
             float maxSpeedMult = (a->stuck > STUCK_THRESHOLD) ? 1.6f : MAX_SPEED_MULTIPLIER;
             vel = vclamp_len(vel, a->speed * maxSpeedMult);
             a->vel = vel;
@@ -570,23 +623,49 @@ int main(void) {
 
         double tUpd1 = GetTime();
 
-        // Estimate total kernel time from sampled calls:
         double ms_avoidKernel_est = 0.0;
         if (avoidKernelTimedCalls > 0 && avoidCalls > 0) {
-            // Better estimator: timed_total * (avoidCalls / timedCalls)
             ms_avoidKernel_est = Ms(avoidKernelSeconds) * ((double)avoidCalls / (double)avoidKernelTimedCalls);
         }
 
-        // Draw bounds for culling
+        // Compute visible bounds for culling
         Vector2 tl = GetScreenToWorld2D((Vector2){0, 0}, cam);
         Vector2 br = GetScreenToWorld2D((Vector2){(float)screenW, (float)screenH}, cam);
-        float margin = 8.0f;
+        // Margin accounts for sprite height so agents smoothly enter from top
+        float margin = (float)agentTex.height + 16.0f;
         float minX = fminf(tl.x, br.x) - margin;
         float maxX = fmaxf(tl.x, br.x) + margin;
         float minY = fminf(tl.y, br.y) - margin;
         float maxY = fmaxf(tl.y, br.y) + margin;
 
-        // Draw (we will display LAST frame's measured numbers)
+        // Build draw order: collect visible agents
+        double tYSort0 = GetTime();
+        visibleCount = 0;
+
+        if (drawAgents) {
+            if (cullDraw) {
+                for (int i = 0; i < AGENT_COUNT; i++) {
+                    Vector2 p = agents[i].pos;
+                    if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY) {
+                        drawOrder[visibleCount++] = i;
+                    }
+                }
+            } else {
+                // No culling: all agents visible
+                for (int i = 0; i < AGENT_COUNT; i++) {
+                    drawOrder[visibleCount++] = i;
+                }
+            }
+
+            // Sort visible agents by Y for correct 2.5D draw order
+            if (ySortOn && visibleCount > 0) {
+                SortDrawOrderByYBands(agents, drawOrder, visibleCount,
+                                      minY, maxY, bandCounts, bandStarts, tempOrder);
+            }
+        }
+        double tYSort1 = GetTime();
+
+        // Draw
         double tDraw0 = GetTime();
 
         BeginDrawing();
@@ -596,41 +675,44 @@ int main(void) {
         DrawRectangleLines(0, 0, (int)WORLD_W, (int)WORLD_H, (Color){ 80, 80, 90, 255 });
 
         if (drawAgents) {
-            for (int i = 0; i < AGENT_COUNT; i++) {
+            // Draw in Y-sorted order (lower Y = further back = drawn first)
+            for (int v = 0; v < visibleCount; v++) {
+                int i = drawOrder[v];
                 const Agent* a = &agents[i];
                 Vector2 p = a->pos;
-
-                if (cullDraw) {
-                    if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
-                }
 
                 Color col = (Color){ 200, 220, 255, 255 };
                 if (a->wait > 0.0f) col = (Color){ 240, 220, 120, 255 };
                 else if (avoidanceOn && a->stuck > STUCK_THRESHOLD) col = (Color){ 255, 90, 90, 255 };
 
-               // Rectangle r = { p.x - AGENT_SIZE * 0.5f, p.y - AGENT_SIZE * 0.5f, AGENT_SIZE, AGENT_SIZE };
-               // DrawRectangleRec(r, col);
+                //Rectangle r = { p.x - AGENT_SIZE * 0.5f, p.y - AGENT_SIZE * 0.5f, AGENT_SIZE, AGENT_SIZE };
+                //DrawRectangleRec(r, col);
 
-                DrawTexture(agentTex, (int)p.x, (int)p.y, col);
+                 Rectangle src = { 0, 0, agentTex.width, agentTex.height };
+                 Rectangle dst = { p.x, p.y, agentTex.width, agentTex.height };
+                 Vector2 origin = { agentTex.width* 0.5f, agentTex.height };
+                 DrawTexturePro(agentTex, src, dst, origin, 0.0f, col);
             }
         }
 
         EndMode2D();
 
-        // Overlay text (previous frame)
-        DrawTextShadow("WASD/Arrows: pan | Wheel: zoom | V: avoidance | R: draw | C: cull", 12, 12, 18, RAYWHITE);
+        // Overlay text
+        DrawTextShadow("WASD/Arrows: pan | Wheel: zoom | V: avoidance | R: draw | C: cull | Y: y-sort", 12, 12, 18, RAYWHITE);
         DrawTextShadow(avoidanceOn ? "Avoidance: ON (speed-relative + cache opt)" : "Avoidance: OFF (true baseline)",
                  12, 36, 18, avoidanceOn ? GREEN : RED);
         DrawTextShadow(drawAgents ? "Draw: ON" : "Draw: OFF", 12, 60, 18, drawAgents ? GREEN : RED);
-        DrawTextShadow(cullDraw ? "Cull: ON" : "Cull: OFF", 12, 84, 18, cullDraw ? GREEN : RED);
+        DrawTextShadow(cullDraw ? "Cull: ON" : "Cull: OFF", 120, 60, 18, cullDraw ? GREEN : RED);
+        DrawTextShadow(ySortOn ? "Y-Sort: ON" : "Y-Sort: OFF", 230, 60, 18, ySortOn ? GREEN : RED);
 
-        DrawFPS(12, 108);
+        DrawFPS(12, 84);
 
-        int y = 136;
+        int y = 112;
 
         DrawTextShadow(TextFormat("ms/frame: %.2f (avg %.2f)", last_ms_frame, ema_frame), 12, y, 18, RAYWHITE); y += 22;
         DrawTextShadow(TextFormat("grid:     %.2f (avg %.2f)", last_ms_grid,  ema_grid),  12, y, 18, RAYWHITE); y += 22;
         DrawTextShadow(TextFormat("update:   %.2f (avg %.2f)", last_ms_update,ema_update),12, y, 18, RAYWHITE); y += 22;
+        DrawTextShadow(TextFormat("y-sort:   %.2f (avg %.2f)  visible: %d", last_ms_ysort, ema_ysort, last_visibleCount), 12, y, 18, RAYWHITE); y += 22;
         DrawTextShadow(TextFormat("draw+swap:%.2f (avg %.2f)", last_ms_draw,  ema_draw),  12, y, 18, RAYWHITE); y += 22;
         DrawTextShadow(TextFormat("swap only:%.2f (avg %.2f)", last_ms_swap,  ema_swap),  12, y, 18, RAYWHITE); y += 22;
 
@@ -652,25 +734,25 @@ int main(void) {
                            12, y, 18, RAYWHITE); y += 22;
         }
 
-        // Measure swap/present accurately: time EndDrawing()
         double tBeforeSwap = GetTime();
         EndDrawing();
         double tFrame1 = GetTime();
 
-        // Compute true per-frame ms INCLUDING EndDrawing()
         double ms_frame = Ms(tFrame1 - tFrame0);
         double ms_grid  = Ms(tGrid1 - tGrid0);
         double ms_upd   = Ms(tUpd1 - tUpd0);
-        double ms_draw  = Ms(tFrame1 - tDraw0);        // draw + swap
-        double ms_swap  = Ms(tFrame1 - tBeforeSwap);   // swap/present
+        double ms_ysort = Ms(tYSort1 - tYSort0);
+        double ms_draw  = Ms(tFrame1 - tDraw0);
+        double ms_swap  = Ms(tFrame1 - tBeforeSwap);
 
-        // Store "last" values for next frame overlay
         last_ms_frame = ms_frame;
         last_ms_grid  = ms_grid;
         last_ms_update= ms_upd;
+        last_ms_ysort = ms_ysort;
         last_ms_draw  = ms_draw;
         last_ms_swap  = ms_swap;
         last_ms_avoidKernel_est = ms_avoidKernel_est;
+        last_visibleCount = visibleCount;
 
         last_avoidCalls = avoidCalls;
         last_avgScan  = (avoidCalls > 0) ? ((double)avoidScannedTotal / (double)avoidCalls) : 0.0;
@@ -680,22 +762,26 @@ int main(void) {
         last_scanCapHits = scanCapHits;
         last_neighborCapHits = neighborCapHits;
 
-        // Smooth EMAs
         ema_frame = EMA(ema_frame, ms_frame, PROF_SMOOTH_ALPHA);
         ema_grid  = EMA(ema_grid,  ms_grid,  PROF_SMOOTH_ALPHA);
         ema_update= EMA(ema_update,ms_upd,   PROF_SMOOTH_ALPHA);
+        ema_ysort = EMA(ema_ysort, ms_ysort, PROF_SMOOTH_ALPHA);
         ema_draw  = EMA(ema_draw,  ms_draw,  PROF_SMOOTH_ALPHA);
         ema_swap  = EMA(ema_swap,  ms_swap,  PROF_SMOOTH_ALPHA);
         ema_avoidKernel = EMA(ema_avoidKernel, ms_avoidKernel_est, PROF_SMOOTH_ALPHA);
     }
 
+    MemFree(drawOrder);
+    MemFree(tempOrder);
+    MemFree(bandCounts);
+    MemFree(bandStarts);
     MemFree(cellCountArr);
     MemFree(cellStart);
     MemFree(cellWrite);
     MemFree(agentCell);
     MemFree(cellAgents);
     MemFree(agents);
-    UnloadTexture(agentTex);
+      UnloadTexture(agentTex);
     CloseWindow();
     return 0;
 }

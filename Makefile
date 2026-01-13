@@ -1,7 +1,7 @@
 CC := clang
 
 TARGET := crowd
-SRC := crowd-raylib-betterstats4.c
+SRC := crowd-raylib-betterstats5.c
 
 # You can override this when calling make, e.g.:
 #   make MACOSX_DEPLOYMENT_TARGET=14.0
