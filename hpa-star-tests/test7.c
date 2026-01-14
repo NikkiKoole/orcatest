@@ -145,6 +145,7 @@ void HandleInput(void) {
     if (IsKeyPressed(KEY_TWO)) GenerateCity();
     if (IsKeyPressed(KEY_THREE)) GenerateMixed();
     if (IsKeyPressed(KEY_FOUR)) GeneratePerlin();
+    if (IsKeyPressed(KEY_FIVE)) GenerateConcentricMaze();
     if (IsKeyPressed(KEY_E)) BuildEntrances();
     if (IsKeyPressed(KEY_B)) BuildGraph();
     if (IsKeyPressed(KEY_U)) UpdateDirtyChunks();  // Incremental update
@@ -176,6 +177,7 @@ int main(void) {
     texWall = LoadTexture("wall.png");
     SetTargetFPS(60);
     InitGrid();
+    //InitGridWithSizeAndChunkSize(128, 128, 32, 16);
     offset.x = (screenWidth - gridWidth * CELL_SIZE * zoom) / 2.0f;
     offset.y = (screenHeight - gridHeight * CELL_SIZE * zoom) / 2.0f;
 
@@ -189,15 +191,15 @@ int main(void) {
         DrawEntrances();
         DrawPath();
         DrawFPS(5, 5);
-        DrawText(TextFormat("Algo: %s | Dir: %s | Entrances: %d | Edges: %d", 
+        DrawText(TextFormat("Algo: %s | Dir: %s | Entrances: %d | Edges: %d",
                  pathAlgorithmNames[pathAlgorithm], use8Dir ? "8-dir" : "4-dir", entranceCount, graphEdgeCount), 5, 25, 16, WHITE);
         if (pathAlgorithm == 1 && hpaAbstractTime > 0) {
-            DrawText(TextFormat("Path: %d | Explored: %d | Time: %.2fms (abstract: %.2fms, refine: %.2fms)", 
+            DrawText(TextFormat("Path: %d | Explored: %d | Time: %.2fms (abstract: %.2fms, refine: %.2fms)",
                      pathLength, nodesExplored, lastPathTime, hpaAbstractTime, hpaRefinementTime), 5, 45, 16, WHITE);
         } else {
             DrawText(TextFormat("Path: %d | Explored: %d | Time: %.2fms", pathLength, nodesExplored, lastPathTime), 5, 45, 16, WHITE);
         }
-        DrawText("S/G+Click | P: Path | T: Algo | D: Dir | 1-4: Gen | E: Entrances | B: Graph | U: Update", 5, screenHeight - 20, 14, GRAY);
+        DrawText("S/G+Click | P: Path | T: Algo | D: Dir | 1-5: Gen | E: Entrances | B: Graph | U: Update", 5, screenHeight - 20, 14, GRAY);
         EndDrawing();
     }
     UnloadTexture(texGrass);

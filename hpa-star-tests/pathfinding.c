@@ -469,15 +469,6 @@ static int FindEntranceByPosition(int x, int y) {
     return -1;  // Not found (entrance was removed)
 }
 
-// Get shared chunk between two entrances, returns -1 if none
-static int GetSharedChunk(int e1, int e2) {
-    int c1a = entrances[e1].chunk1, c1b = entrances[e1].chunk2;
-    int c2a = entrances[e2].chunk1, c2b = entrances[e2].chunk2;
-    if (c1a == c2a || c1a == c2b) return c1a;
-    if (c1b == c2a || c1b == c2b) return c1b;
-    return -1;
-}
-
 // Check if an entrance (by new index) touches any affected chunk
 static bool NewEntranceTouchesAffected(int idx, bool affectedChunks[MAX_CHUNKS_Y][MAX_CHUNKS_X]) {
     int c1 = entrances[idx].chunk1;

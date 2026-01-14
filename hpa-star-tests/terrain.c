@@ -20,6 +20,81 @@ void GenerateSparse(float density) {
     needsRebuild = true;
 }
 
+void GenerateConcentricMaze(void) {
+    InitGrid();
+    
+    // Create concentric rectangular rings with gaps
+    // Each ring has a gap on alternating sides to force spiraling
+    int minDim = gridWidth < gridHeight ? gridWidth : gridHeight;
+    int ringSpacing = 4;  // space between rings
+    int wallThickness = 2;
+    int gapSize = 3;
+    
+    int ringCount = (minDim / 2) / ringSpacing;
+    
+    for (int ring = 0; ring < ringCount; ring++) {
+        int offset = ring * ringSpacing;
+        int left = offset;
+        int right = gridWidth - 1 - offset;
+        int top = offset;
+        int bottom = gridHeight - 1 - offset;
+        
+        // Skip if ring is too small
+        if (right - left < gapSize * 2 || bottom - top < gapSize * 2) break;
+        
+        // Determine gap position - alternate sides for each ring
+        // Ring 0: gap on right, Ring 1: gap on bottom, Ring 2: gap on left, Ring 3: gap on top, etc.
+        int gapSide = ring % 4;
+        int gapStart;
+        
+        // Draw top wall
+        if (gapSide == 3) {
+            gapStart = left + (right - left) / 2 - gapSize / 2;
+        }
+        for (int x = left; x <= right; x++) {
+            if (gapSide == 3 && x >= gapStart && x < gapStart + gapSize) continue;
+            for (int t = 0; t < wallThickness && top + t < gridHeight; t++) {
+                grid[top + t][x] = CELL_WALL;
+            }
+        }
+        
+        // Draw bottom wall
+        if (gapSide == 1) {
+            gapStart = left + (right - left) / 2 - gapSize / 2;
+        }
+        for (int x = left; x <= right; x++) {
+            if (gapSide == 1 && x >= gapStart && x < gapStart + gapSize) continue;
+            for (int t = 0; t < wallThickness && bottom - t >= 0; t++) {
+                grid[bottom - t][x] = CELL_WALL;
+            }
+        }
+        
+        // Draw left wall
+        if (gapSide == 2) {
+            gapStart = top + (bottom - top) / 2 - gapSize / 2;
+        }
+        for (int y = top; y <= bottom; y++) {
+            if (gapSide == 2 && y >= gapStart && y < gapStart + gapSize) continue;
+            for (int t = 0; t < wallThickness && left + t < gridWidth; t++) {
+                grid[y][left + t] = CELL_WALL;
+            }
+        }
+        
+        // Draw right wall
+        if (gapSide == 0) {
+            gapStart = top + (bottom - top) / 2 - gapSize / 2;
+        }
+        for (int y = top; y <= bottom; y++) {
+            if (gapSide == 0 && y >= gapStart && y < gapStart + gapSize) continue;
+            for (int t = 0; t < wallThickness && right - t >= 0; t++) {
+                grid[y][right - t] = CELL_WALL;
+            }
+        }
+    }
+    
+    needsRebuild = true;
+}
+
 void InitPerlin(int seed) {
     SetRandomSeed(seed);
     for (int i = 0; i < 256; i++) permutation[i] = i;

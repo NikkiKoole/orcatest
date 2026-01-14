@@ -561,24 +561,165 @@ describe(astar_pathfinding) {
 }
 
 describe(hpa_star_pathfinding) {
-    it("should find a path using HPA* on an empty grid") {
-        InitGridWithSize(TEST_GRID_SIZE, TEST_GRID_SIZE);
+    it("should find path from corner to opposite corner") {
+        // 3x3 chunks, 4x4 each
+        InitGridWithSizeAndChunkSize(12, 12, 4, 4);
         BuildEntrances();
         BuildGraph();
-        startPos = (Point){5, 5};
-        goalPos = (Point){TEST_GRID_SIZE - 10, TEST_GRID_SIZE - 10};
+
+        startPos = (Point){1, 1};      // chunk 0 (top-left)
+        goalPos = (Point){10, 10};     // chunk 8 (bottom-right)
         RunHPAStar();
+
         expect(pathLength > 0);
     }
 
-    it("should find same-chunk paths without using the graph") {
-        InitGridWithSize(TEST_GRID_SIZE, TEST_GRID_SIZE);
+    it("should not find path when completely walled off") {
+        // Horizontal wall cuts the grid in half
+        // S = start area, G = goal area
+        //
+        //  S..........
+        //  ...........
+        //  ...........
+        //  ############
+        //  ...........
+        //  ...........
+        //  ...........
+        //  ...........
+        //  ...........
+        //  ...........
+        //  ..........G
+        //  ...........
+        //
+        const char* map =
+            "............\n"
+            "............\n"
+            "............\n"
+            "############\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n";
+
+        InitGridFromAsciiWithChunkSize(map, 4, 4);
         BuildEntrances();
         BuildGraph();
-        // Start and goal in same chunk
-        startPos = (Point){5, 5};
+
+        startPos = (Point){1, 1};      // above the wall
+        goalPos = (Point){10, 10};     // below the wall
+        RunHPAStar();
+
+        expect(pathLength == 0);
+    }
+
+    it("should find path through gap in wall") {
+        // Horizontal wall with a gap - path must go through the gap
+        //
+        //  S..........
+        //  ...........
+        //  ...........
+        //  ####....####
+        //  ...........
+        //  ...........
+        //  ...........
+        //  ...........
+        //  ...........
+        //  ...........
+        //  ..........G
+        //  ...........
+        //
+        const char* map =
+            "............\n"
+            "............\n"
+            "............\n"
+            "####....####\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n";
+
+        InitGridFromAsciiWithChunkSize(map, 4, 4);
+        BuildEntrances();
+        BuildGraph();
+
+        startPos = (Point){1, 1};      // above the wall
+        goalPos = (Point){10, 10};     // below the wall
+        RunHPAStar();
+
+        expect(pathLength > 0);
+    }
+
+    it("path should only contain walkable cells") {
+        // Maze-like structure - path must navigate around walls
+        //
+        //  S...........
+        //  .##.........
+        //  .##.........
+        //  ............
+        //  ........##..
+        //  ........##..
+        //  ............
+        //  ...##.......
+        //  ...##.......
+        //  ............
+        //  ..........G.
+        //  ............
+        //
+        const char* map =
+            "............\n"
+            ".##.........\n"
+            ".##.........\n"
+            "............\n"
+            "........##..\n"
+            "........##..\n"
+            "............\n"
+            "...##.......\n"
+            "...##.......\n"
+            "............\n"
+            "............\n"
+            "............\n";
+
+        InitGridFromAsciiWithChunkSize(map, 4, 4);
+        BuildEntrances();
+        BuildGraph();
+
+        startPos = (Point){0, 0};
         goalPos = (Point){10, 10};
         RunHPAStar();
+
+        // Every cell in the path must be walkable
+        int allWalkable = 1;
+        for (int i = 0; i < pathLength && allWalkable; i++) {
+            int x = path[i].x;
+            int y = path[i].y;
+            if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) {
+                allWalkable = 0;
+            } else if (grid[y][x] != CELL_WALKABLE) {
+                allWalkable = 0;
+            }
+        }
+
+        expect(pathLength > 0 && allWalkable == 1);
+    }
+
+    it("should find same-chunk paths without using the graph") {
+        InitGridWithSizeAndChunkSize(12, 12, 4, 4);
+        BuildEntrances();
+        BuildGraph();
+
+        // Start and goal in same chunk (chunk 0)
+        startPos = (Point){1, 1};
+        goalPos = (Point){2, 2};
+        RunHPAStar();
+
         expect(pathLength > 0);
     }
 }

@@ -9,6 +9,7 @@ void GenerateSparse(float density);
 void GeneratePerlin(void);
 void GenerateCity(void);
 void GenerateMixed(void);
+void GenerateConcentricMaze(void);
 
 // Perlin noise utilities
 void InitPerlin(int seed);
