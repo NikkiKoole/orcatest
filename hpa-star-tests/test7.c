@@ -7,6 +7,7 @@
 #include <math.h>
 
 #define CELL_SIZE   32
+#define MAX_AGENTS  50
 
 float zoom = 1.0f;
 Vector2 offset = {0, 0};
@@ -17,6 +18,19 @@ bool showGraph = false;
 // Pathfinding algorithm selection: 0=A*, 1=HPA*, 2=JPS
 int pathAlgorithm = 0;
 const char* pathAlgorithmNames[] = {"A*", "HPA*", "JPS"};
+
+// Multi-agent paths
+typedef struct {
+    Point start;
+    Point goal;
+    Point path[MAX_PATH];
+    int pathLength;
+    Color color;
+    bool active;
+} Agent;
+
+Agent agents[MAX_AGENTS];
+int agentCount = 0;
 
 void DrawCellGrid(void) {
     Rectangle src = {0, 0, 16, 16};
@@ -82,6 +96,83 @@ void DrawPath(void) {
         float px = offset.x + path[i].x * size + size * 0.25f;
         float py = offset.y + path[i].y * size + size * 0.25f;
         DrawRectangle((int)px, (int)py, (int)(size * 0.5f), (int)(size * 0.5f), BLUE);
+    }
+}
+
+Point GetRandomWalkableCell(void) {
+    Point p;
+    int attempts = 0;
+    do {
+        p.x = GetRandomValue(0, gridWidth - 1);
+        p.y = GetRandomValue(0, gridHeight - 1);
+        attempts++;
+    } while (grid[p.y][p.x] != CELL_WALKABLE && attempts < 1000);
+    return p;
+}
+
+Color GetRandomColor(void) {
+    return (Color){
+        GetRandomValue(100, 255),
+        GetRandomValue(100, 255),
+        GetRandomValue(100, 255),
+        255
+    };
+}
+
+void SpawnAgents(int count) {
+    double startTime = GetTime();
+    agentCount = 0;
+    for (int i = 0; i < count && i < MAX_AGENTS; i++) {
+        Agent* a = &agents[agentCount];
+        a->start = GetRandomWalkableCell();
+        a->goal = GetRandomWalkableCell();
+        a->color = GetRandomColor();
+
+        // Run pathfinding
+        startPos = a->start;
+        goalPos = a->goal;
+        RunHPAStar();
+
+        // Copy path to agent
+        a->pathLength = pathLength;
+        for (int j = 0; j < pathLength; j++) {
+            a->path[j] = path[j];
+        }
+        a->active = (pathLength > 0);
+        agentCount++;
+    }
+
+    // Clear global path
+    startPos = (Point){-1, -1};
+    goalPos = (Point){-1, -1};
+    pathLength = 0;
+    
+    double totalTime = (GetTime() - startTime) * 1000.0;
+    TraceLog(LOG_INFO, "SpawnAgents: %d agents in %.2fms (avg %.2fms per agent)", count, totalTime, totalTime / count);
+}
+
+void DrawAgents(void) {
+    float size = CELL_SIZE * zoom;
+    for (int i = 0; i < agentCount; i++) {
+        Agent* a = &agents[i];
+        if (!a->active) continue;
+
+        // Draw start (circle)
+        float sx = offset.x + a->start.x * size + size / 2;
+        float sy = offset.y + a->start.y * size + size / 2;
+        DrawCircle((int)sx, (int)sy, size * 0.4f, a->color);
+
+        // Draw goal (square outline)
+        float gx = offset.x + a->goal.x * size;
+        float gy = offset.y + a->goal.y * size;
+        DrawRectangleLines((int)gx, (int)gy, (int)size, (int)size, a->color);
+
+        // Draw path
+        for (int j = 0; j < a->pathLength; j++) {
+            float px = offset.x + a->path[j].x * size + size * 0.35f;
+            float py = offset.y + a->path[j].y * size + size * 0.35f;
+            DrawRectangle((int)px, (int)py, (int)(size * 0.3f), (int)(size * 0.3f), a->color);
+        }
     }
 }
 
@@ -163,6 +254,7 @@ void HandleInput(void) {
     if (IsKeyPressed(KEY_T)) pathAlgorithm = (pathAlgorithm + 1) % 3;  // Cycle through algorithms
     if (IsKeyPressed(KEY_D)) use8Dir = !use8Dir;  // Toggle 4-dir/8-dir
     if (IsKeyPressed(KEY_V)) showGraph = !showGraph;
+    if (IsKeyPressed(KEY_A)) SpawnAgents(MAX_AGENTS);  // Spawn 10 random agents
     if (IsKeyPressed(KEY_R)) {
         zoom = 1.0f;
         offset.x = (1280 - gridWidth * CELL_SIZE * zoom) / 2.0f;
@@ -190,16 +282,17 @@ int main(void) {
         DrawGraph();
         DrawEntrances();
         DrawPath();
+        DrawAgents();
         DrawFPS(5, 5);
-        DrawText(TextFormat("Algo: %s | Dir: %s | Entrances: %d | Edges: %d",
-                 pathAlgorithmNames[pathAlgorithm], use8Dir ? "8-dir" : "4-dir", entranceCount, graphEdgeCount), 5, 25, 16, WHITE);
+        DrawText(TextFormat("Algo: %s | Dir: %s | Entrances: %d | Edges: %d | Agents: %d",
+                 pathAlgorithmNames[pathAlgorithm], use8Dir ? "8-dir" : "4-dir", entranceCount, graphEdgeCount, agentCount), 5, 25, 16, WHITE);
         if (pathAlgorithm == 1 && hpaAbstractTime > 0) {
             DrawText(TextFormat("Path: %d | Explored: %d | Time: %.2fms (abstract: %.2fms, refine: %.2fms)",
                      pathLength, nodesExplored, lastPathTime, hpaAbstractTime, hpaRefinementTime), 5, 45, 16, WHITE);
         } else {
             DrawText(TextFormat("Path: %d | Explored: %d | Time: %.2fms", pathLength, nodesExplored, lastPathTime), 5, 45, 16, WHITE);
         }
-        DrawText("S/G+Click | P: Path | T: Algo | D: Dir | 1-5: Gen | E: Entrances | B: Graph | U: Update", 5, screenHeight - 20, 14, GRAY);
+        DrawText("S/G+Click | P: Path | T: Algo | D: Dir | 1-5: Gen | E: Entrances | B: Graph | U: Update | A: Agents", 5, screenHeight - 20, 14, GRAY);
         EndDrawing();
     }
     UnloadTexture(texGrass);
