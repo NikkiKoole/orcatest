@@ -37,15 +37,16 @@ void DrawCellGrid(void) {
 
 void DrawChunkBoundaries(void) {
     float cellSize = CELL_SIZE * zoom;
-    float chunkPixels = CHUNK_SIZE * cellSize;
+    float chunkPixelsX = chunkWidth * cellSize;
+    float chunkPixelsY = chunkHeight * cellSize;
     for (int cy = 0; cy <= chunksY; cy++) {
-        Vector2 s = {offset.x, offset.y + cy * chunkPixels};
-        Vector2 e = {offset.x + chunksX * chunkPixels, offset.y + cy * chunkPixels};
+        Vector2 s = {offset.x, offset.y + cy * chunkPixelsY};
+        Vector2 e = {offset.x + chunksX * chunkPixelsX, offset.y + cy * chunkPixelsY};
         DrawLineEx(s, e, 3.0f, RED);
     }
     for (int cx = 0; cx <= chunksX; cx++) {
-        Vector2 s = {offset.x + cx * chunkPixels, offset.y};
-        Vector2 e = {offset.x + cx * chunkPixels, offset.y + chunksY * chunkPixels};
+        Vector2 s = {offset.x + cx * chunkPixelsX, offset.y};
+        Vector2 e = {offset.x + cx * chunkPixelsX, offset.y + chunksY * chunkPixelsY};
         DrawLineEx(s, e, 3.0f, RED);
     }
 }

@@ -6,7 +6,7 @@
 #include "../hpa-star-tests/pathfinding.h"
 
 // Test grid size - 4x4 chunks = 128x128 cells
-#define TEST_GRID_SIZE (CHUNK_SIZE * 3)
+#define TEST_GRID_SIZE (DEFAULT_CHUNK_SIZE * 3)
 
 describe(grid_initialization) {
     it("should initialize grid to all walkable cells") {
@@ -30,8 +30,8 @@ describe(grid_initialization) {
         grid[10][10] = CELL_WALL;
         MarkChunkDirty(10, 10);
 
-        int cx = 10 / CHUNK_SIZE;
-        int cy = 10 / CHUNK_SIZE;
+        int cx = 10 / chunkWidth;
+        int cy = 10 / chunkHeight;
         expect(chunkDirty[cy][cx] == true && needsRebuild == true);
     }
 }
@@ -49,10 +49,10 @@ describe(entrance_building) {
         for (int i = 0; i < entranceCount && allOnBorders; i++) {
             int x = entrances[i].x;
             int y = entrances[i].y;
-            // Entrance must be on a vertical border (x % CHUNK_SIZE == 0)
-            // OR on a horizontal border (y % CHUNK_SIZE == 0)
-            int onVerticalBorder = (x % CHUNK_SIZE == 0);
-            int onHorizontalBorder = (y % CHUNK_SIZE == 0);
+            // Entrance must be on a vertical border (x % chunkWidth == 0)
+            // OR on a horizontal border (y % chunkHeight == 0)
+            int onVerticalBorder = (x % chunkWidth == 0);
+            int onHorizontalBorder = (y % chunkHeight == 0);
             if (!onVerticalBorder && !onHorizontalBorder) {
                 allOnBorders = 0;
             }
@@ -64,7 +64,7 @@ describe(entrance_building) {
     it("should not create entrances where walls block the border") {
         InitGridWithSize(TEST_GRID_SIZE, TEST_GRID_SIZE);
         // Block the entire first horizontal border
-        int borderY = CHUNK_SIZE;
+        int borderY = chunkHeight;
         for (int x = 0; x < gridWidth; x++) {
             grid[borderY - 1][x] = CELL_WALL;
         }
@@ -78,29 +78,29 @@ describe(entrance_building) {
     }
 
     it("should create correct entrances for full open border") {
-        // A fully open border of CHUNK_SIZE cells should create ceil(CHUNK_SIZE / MAX_ENTRANCE_WIDTH) entrances
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);  // 2x2 chunks
+        // A fully open border of chunkWidth cells should create ceil(chunkWidth / MAX_ENTRANCE_WIDTH) entrances
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);  // 2x2 chunks
         BuildEntrances();
 
-        // Count entrances on the horizontal border at y=CHUNK_SIZE, x in [0, CHUNK_SIZE)
+        // Count entrances on the horizontal border at y=chunkHeight, x in [0, chunkWidth)
         int entrancesOnBorder = 0;
         for (int i = 0; i < entranceCount; i++) {
-            if (entrances[i].y == CHUNK_SIZE && entrances[i].x < CHUNK_SIZE) {
+            if (entrances[i].y == chunkHeight && entrances[i].x < chunkWidth) {
                 entrancesOnBorder++;
             }
         }
 
-        // With CHUNK_SIZE=32 and MAX_ENTRANCE_WIDTH=6, we expect ceil(32/6) = 6 entrances
-        int expectedEntrances = (CHUNK_SIZE + MAX_ENTRANCE_WIDTH - 1) / MAX_ENTRANCE_WIDTH;
+        // With chunkWidth=32 and MAX_ENTRANCE_WIDTH=6, we expect ceil(32/6) = 6 entrances
+        int expectedEntrances = (chunkWidth + MAX_ENTRANCE_WIDTH - 1) / MAX_ENTRANCE_WIDTH;
         expect(entrancesOnBorder == expectedEntrances);
     }
 
     it("should create one entrance for narrow opening") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);  // 2x2 chunks
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);  // 2x2 chunks
 
         // Block the horizontal border except for a 3-cell gap
-        int borderY = CHUNK_SIZE;
-        for (int x = 0; x < CHUNK_SIZE; x++) {
+        int borderY = chunkHeight;
+        for (int x = 0; x < chunkWidth; x++) {
             grid[borderY - 1][x] = CELL_WALL;
             grid[borderY][x] = CELL_WALL;
         }
@@ -117,7 +117,7 @@ describe(entrance_building) {
         // Count entrances on this border section
         int entrancesOnBorder = 0;
         for (int i = 0; i < entranceCount; i++) {
-            if (entrances[i].y == borderY && entrances[i].x < CHUNK_SIZE) {
+            if (entrances[i].y == borderY && entrances[i].x < chunkWidth) {
                 entrancesOnBorder++;
             }
         }
@@ -127,11 +127,11 @@ describe(entrance_building) {
     }
 
     it("should create multiple entrances for wide opening") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);  // 2x2 chunks
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);  // 2x2 chunks
 
         // Block the horizontal border except for a wide gap
-        int borderY = CHUNK_SIZE;
-        for (int x = 0; x < CHUNK_SIZE; x++) {
+        int borderY = chunkHeight;
+        for (int x = 0; x < chunkWidth; x++) {
             grid[borderY - 1][x] = CELL_WALL;
             grid[borderY][x] = CELL_WALL;
         }
@@ -148,7 +148,7 @@ describe(entrance_building) {
         // Count entrances on this border section
         int entrancesOnBorder = 0;
         for (int i = 0; i < entranceCount; i++) {
-            if (entrances[i].y == borderY && entrances[i].x < CHUNK_SIZE) {
+            if (entrances[i].y == borderY && entrances[i].x < chunkWidth) {
                 entrancesOnBorder++;
             }
         }
@@ -168,7 +168,7 @@ describe(graph_building) {
     }
 
     it("edges should be symmetric - cost A to B equals cost B to A") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);
         BuildEntrances();
         BuildGraph();
 
@@ -192,7 +192,7 @@ describe(graph_building) {
     }
 
     it("should not create edges between entrances in different non-adjacent chunks") {
-        InitGridWithSize(CHUNK_SIZE * 3, CHUNK_SIZE * 3);  // 3x3 chunks
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 3, DEFAULT_CHUNK_SIZE * 3);  // 3x3 chunks
         BuildEntrances();
         BuildGraph();
 
@@ -214,19 +214,19 @@ describe(graph_building) {
     }
 
     it("should not create edge when wall completely blocks path between entrances") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);
 
         // Put a wall that divides chunk 0 into two unreachable halves
         // Vertical wall from top to bottom of chunk 0
-        for (int y = 0; y < CHUNK_SIZE; y++) {
-            grid[y][CHUNK_SIZE / 2] = CELL_WALL;
+        for (int y = 0; y < chunkHeight; y++) {
+            grid[y][chunkWidth / 2] = CELL_WALL;
         }
 
         BuildEntrances();
         BuildGraph();
 
-        // Find entrances on the left border of chunk 1 (x = CHUNK_SIZE)
-        // and entrances on the bottom border of chunk 0 (y = CHUNK_SIZE)
+        // Find entrances on the left border of chunk 1 (x = chunkWidth)
+        // and entrances on the bottom border of chunk 0 (y = chunkHeight)
         // These are in the same chunk (0 or 1) but the wall may block some paths
 
         // The test: verify no edge exists between unreachable entrances
@@ -243,13 +243,13 @@ describe(graph_building) {
 
             if (e1InChunk0 && e2InChunk0) {
                 // Check if they're on opposite sides of the wall
-                int e1Left = entrances[e1].x < CHUNK_SIZE / 2;
-                int e2Left = entrances[e2].x < CHUNK_SIZE / 2;
+                int e1Left = entrances[e1].x < chunkWidth / 2;
+                int e2Left = entrances[e2].x < chunkWidth / 2;
 
                 // If both entrances are in chunk 0 and on opposite sides of wall,
                 // there shouldn't be an edge (wall blocks it)
                 // But we need to check their y positions too - the wall is vertical
-                if (entrances[e1].y < CHUNK_SIZE && entrances[e2].y < CHUNK_SIZE) {
+                if (entrances[e1].y < chunkHeight && entrances[e2].y < chunkHeight) {
                     if (e1Left != e2Left) {
                         foundInvalidEdge = 1;  // This edge shouldn't exist
                     }
@@ -260,7 +260,7 @@ describe(graph_building) {
     }
 
     it("should create edge when path exists between entrances") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);
         // Completely open grid - all entrances in a chunk should connect
         BuildEntrances();
         BuildGraph();
@@ -311,7 +311,7 @@ describe(graph_building) {
     }
 
     it("should not create duplicate edges for entrances sharing two chunks") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);
         BuildEntrances();
         BuildGraph();
 
@@ -329,7 +329,7 @@ describe(graph_building) {
     }
 
     it("edge cost should equal walking distance") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);
         BuildEntrances();
         BuildGraph();
 
@@ -370,7 +370,7 @@ describe(graph_building) {
 
 describe(incremental_graph_updates) {
     it("incremental update should produce same result as full rebuild") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);
         BuildEntrances();
         BuildGraph();
 
@@ -403,19 +403,19 @@ describe(incremental_graph_updates) {
     }
 
     it("path should still work after wall added via incremental update") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);
         BuildEntrances();
         BuildGraph();
 
         // Verify path works before
         startPos = (Point){5, 5};
-        goalPos = (Point){CHUNK_SIZE + 20, CHUNK_SIZE + 20};
+        goalPos = (Point){chunkWidth + 20, chunkHeight + 20};
         RunHPAStar();
         int pathBeforeWall = pathLength;
 
         // Add wall and update incrementally
-        grid[CHUNK_SIZE / 2][CHUNK_SIZE / 2] = CELL_WALL;
-        MarkChunkDirty(CHUNK_SIZE / 2, CHUNK_SIZE / 2);
+        grid[chunkHeight / 2][chunkWidth / 2] = CELL_WALL;
+        MarkChunkDirty(chunkWidth / 2, chunkHeight / 2);
         UpdateDirtyChunks();
 
         // Path should still work (wall doesn't block everything)
@@ -426,13 +426,13 @@ describe(incremental_graph_updates) {
     }
 
     it("removing an entrance should update all edges correctly") {
-        InitGridWithSize(CHUNK_SIZE * 2, CHUNK_SIZE * 2);
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 2, DEFAULT_CHUNK_SIZE * 2);
         BuildEntrances();
         BuildGraph();
 
         // Block an entire border to remove entrances
-        int borderY = CHUNK_SIZE;
-        for (int x = 0; x < CHUNK_SIZE; x++) {
+        int borderY = chunkHeight;
+        for (int x = 0; x < chunkWidth; x++) {
             grid[borderY - 1][x] = CELL_WALL;
             grid[borderY][x] = CELL_WALL;
         }
@@ -451,13 +451,13 @@ describe(incremental_graph_updates) {
     }
 
     it("changes in one corner should not affect opposite corner") {
-        InitGridWithSize(CHUNK_SIZE * 4, CHUNK_SIZE * 4);  // 4x4 chunks
+        InitGridWithSize(DEFAULT_CHUNK_SIZE * 4, DEFAULT_CHUNK_SIZE * 4);  // 4x4 chunks
         BuildEntrances();
         BuildGraph();
 
         // Find path in bottom-right area (chunks 10, 11, 14, 15)
-        startPos = (Point){CHUNK_SIZE * 2 + 5, CHUNK_SIZE * 2 + 5};
-        goalPos = (Point){CHUNK_SIZE * 4 - 10, CHUNK_SIZE * 4 - 10};
+        startPos = (Point){chunkWidth * 2 + 5, chunkHeight * 2 + 5};
+        goalPos = (Point){chunkWidth * 4 - 10, chunkHeight * 4 - 10};
         RunHPAStar();
         int pathBefore = pathLength;
 
@@ -536,8 +536,8 @@ describe(incremental_updates) {
         (void)originalEdgeCount;  // Suppress unused warning
 
         // Add a wall and update
-        grid[CHUNK_SIZE + 5][CHUNK_SIZE + 5] = CELL_WALL;
-        MarkChunkDirty(CHUNK_SIZE + 5, CHUNK_SIZE + 5);
+        grid[chunkHeight + 5][chunkWidth + 5] = CELL_WALL;
+        MarkChunkDirty(chunkWidth + 5, chunkHeight + 5);
         UpdateDirtyChunks();
 
         // Graph should still work (edge count may differ slightly)
@@ -551,8 +551,8 @@ describe(incremental_updates) {
 
         // Add some walls
         for (int i = 0; i < 5; i++) {
-            grid[CHUNK_SIZE + 10][CHUNK_SIZE + i] = CELL_WALL;
-            MarkChunkDirty(CHUNK_SIZE + i, CHUNK_SIZE + 10);
+            grid[chunkHeight + 10][chunkWidth + i] = CELL_WALL;
+            MarkChunkDirty(chunkWidth + i, chunkHeight + 10);
         }
         UpdateDirtyChunks();
 

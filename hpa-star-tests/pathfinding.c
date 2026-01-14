@@ -121,8 +121,8 @@ static int Heuristic8Dir(int x1, int y1, int x2, int y2) {
 }
 
 void MarkChunkDirty(int cellX, int cellY) {
-    int cx = cellX / CHUNK_SIZE;
-    int cy = cellY / CHUNK_SIZE;
+    int cx = cellX / chunkWidth;
+    int cy = cellY / chunkHeight;
     if (cx >= 0 && cx < chunksX && cy >= 0 && cy < chunksY) {
         chunkDirty[cy][cx] = true;
         needsRebuild = true;
@@ -149,14 +149,15 @@ static void AddEntrancesForRun(int startX, int startY, int length, int horizonta
 
 void BuildEntrances(void) {
     entranceCount = 0;
+    // Horizontal borders (between rows of chunks)
     for (int cy = 0; cy < chunksY - 1; cy++) {
         for (int cx = 0; cx < chunksX; cx++) {
-            int borderY = (cy + 1) * CHUNK_SIZE;
-            int startX = cx * CHUNK_SIZE;
+            int borderY = (cy + 1) * chunkHeight;
+            int startX = cx * chunkWidth;
             int chunk1 = cy * chunksX + cx;
             int chunk2 = (cy + 1) * chunksX + cx;
             int runStart = -1;
-            for (int i = 0; i < CHUNK_SIZE; i++) {
+            for (int i = 0; i < chunkWidth; i++) {
                 int x = startX + i;
                 bool open = (grid[borderY - 1][x] == CELL_WALKABLE && grid[borderY][x] == CELL_WALKABLE);
                 if (open && runStart < 0) runStart = i;
@@ -166,17 +167,18 @@ void BuildEntrances(void) {
                 }
             }
             if (runStart >= 0)
-                AddEntrancesForRun(startX + runStart, borderY, CHUNK_SIZE - runStart, 1, chunk1, chunk2);
+                AddEntrancesForRun(startX + runStart, borderY, chunkWidth - runStart, 1, chunk1, chunk2);
         }
     }
+    // Vertical borders (between columns of chunks)
     for (int cy = 0; cy < chunksY; cy++) {
         for (int cx = 0; cx < chunksX - 1; cx++) {
-            int borderX = (cx + 1) * CHUNK_SIZE;
-            int startY = cy * CHUNK_SIZE;
+            int borderX = (cx + 1) * chunkWidth;
+            int startY = cy * chunkHeight;
             int chunk1 = cy * chunksX + cx;
             int chunk2 = cy * chunksX + (cx + 1);
             int runStart = -1;
-            for (int i = 0; i < CHUNK_SIZE; i++) {
+            for (int i = 0; i < chunkHeight; i++) {
                 int y = startY + i;
                 bool open = (grid[y][borderX - 1] == CELL_WALKABLE && grid[y][borderX] == CELL_WALKABLE);
                 if (open && runStart < 0) runStart = i;
@@ -186,7 +188,7 @@ void BuildEntrances(void) {
                 }
             }
             if (runStart >= 0)
-                AddEntrancesForRun(borderX, startY + runStart, CHUNK_SIZE - runStart, 0, chunk1, chunk2);
+                AddEntrancesForRun(borderX, startY + runStart, chunkHeight - runStart, 0, chunk1, chunk2);
         }
     }
     for (int cy = 0; cy < chunksY; cy++)
@@ -268,10 +270,10 @@ void BuildGraph(void) {
     for (int chunk = 0; chunk < chunksX * chunksY; chunk++) {
         int cx = chunk % chunksX;
         int cy = chunk / chunksX;
-        int minX = cx * CHUNK_SIZE;
-        int minY = cy * CHUNK_SIZE;
-        int maxX = (cx + 1) * CHUNK_SIZE + 1;
-        int maxY = (cy + 1) * CHUNK_SIZE + 1;
+        int minX = cx * chunkWidth;
+        int minY = cy * chunkHeight;
+        int maxX = (cx + 1) * chunkWidth + 1;
+        int maxY = (cy + 1) * chunkHeight + 1;
         if (maxX > gridWidth) maxX = gridWidth;
         if (maxY > gridHeight) maxY = gridHeight;
 
@@ -362,13 +364,13 @@ static void RebuildAffectedEntrances(bool affectedChunks[MAX_CHUNKS_Y][MAX_CHUNK
         for (int cx = 0; cx < chunksX; cx++) {
             if (!affectedChunks[cy][cx] && !affectedChunks[cy+1][cx]) continue;
             
-            int borderY = (cy + 1) * CHUNK_SIZE;
-            int startX = cx * CHUNK_SIZE;
+            int borderY = (cy + 1) * chunkHeight;
+            int startX = cx * chunkWidth;
             int chunk1 = cy * chunksX + cx;
             int chunk2 = (cy + 1) * chunksX + cx;
             int runStart = -1;
             
-            for (int i = 0; i < CHUNK_SIZE; i++) {
+            for (int i = 0; i < chunkWidth; i++) {
                 int x = startX + i;
                 bool open = (grid[borderY - 1][x] == CELL_WALKABLE && grid[borderY][x] == CELL_WALKABLE);
                 if (open && runStart < 0) runStart = i;
@@ -386,7 +388,7 @@ static void RebuildAffectedEntrances(bool affectedChunks[MAX_CHUNKS_Y][MAX_CHUNK
                 }
             }
             if (runStart >= 0) {
-                int length = CHUNK_SIZE - runStart;
+                int length = chunkWidth - runStart;
                 int pos = 0;
                 while (length > 0 && newCount < MAX_ENTRANCES) {
                     int segLen = (length > MAX_ENTRANCE_WIDTH) ? MAX_ENTRANCE_WIDTH : length;
@@ -404,13 +406,13 @@ static void RebuildAffectedEntrances(bool affectedChunks[MAX_CHUNKS_Y][MAX_CHUNK
         for (int cx = 0; cx < chunksX - 1; cx++) {
             if (!affectedChunks[cy][cx] && !affectedChunks[cy][cx+1]) continue;
             
-            int borderX = (cx + 1) * CHUNK_SIZE;
-            int startY = cy * CHUNK_SIZE;
+            int borderX = (cx + 1) * chunkWidth;
+            int startY = cy * chunkHeight;
             int chunk1 = cy * chunksX + cx;
             int chunk2 = cy * chunksX + (cx + 1);
             int runStart = -1;
             
-            for (int i = 0; i < CHUNK_SIZE; i++) {
+            for (int i = 0; i < chunkHeight; i++) {
                 int y = startY + i;
                 bool open = (grid[y][borderX - 1] == CELL_WALKABLE && grid[y][borderX] == CELL_WALKABLE);
                 if (open && runStart < 0) runStart = i;
@@ -428,7 +430,7 @@ static void RebuildAffectedEntrances(bool affectedChunks[MAX_CHUNKS_Y][MAX_CHUNK
                 }
             }
             if (runStart >= 0) {
-                int length = CHUNK_SIZE - runStart;
+                int length = chunkHeight - runStart;
                 int pos = 0;
                 while (length > 0 && newCount < MAX_ENTRANCES) {
                     int segLen = (length > MAX_ENTRANCE_WIDTH) ? MAX_ENTRANCE_WIDTH : length;
@@ -529,10 +531,10 @@ static void RebuildAffectedEdges(bool affectedChunks[MAX_CHUNKS_Y][MAX_CHUNKS_X]
     for (int cy = 0; cy < chunksY; cy++) {
         for (int cx = 0; cx < chunksX; cx++) {
             int chunk = cy * chunksX + cx;
-            int minX = cx * CHUNK_SIZE;
-            int minY = cy * CHUNK_SIZE;
-            int maxX = (cx + 1) * CHUNK_SIZE + 1;
-            int maxY = (cy + 1) * CHUNK_SIZE + 1;
+            int minX = cx * chunkWidth;
+            int minY = cy * chunkHeight;
+            int maxX = (cx + 1) * chunkWidth + 1;
+            int maxY = (cy + 1) * chunkHeight + 1;
             if (maxX > gridWidth) maxX = gridWidth;
             if (maxY > gridHeight) maxY = gridHeight;
             
@@ -711,8 +713,8 @@ void RunAStar(void) {
 
 // Get chunk index from cell coordinates
 static int GetChunk(int x, int y) {
-    int cx = x / CHUNK_SIZE;
-    int cy = y / CHUNK_SIZE;
+    int cx = x / chunkWidth;
+    int cy = y / chunkHeight;
     if (cx < 0) cx = 0;
     if (cx >= chunksX) cx = chunksX - 1;
     if (cy < 0) cy = 0;
@@ -724,10 +726,10 @@ static int GetChunk(int x, int y) {
 static void GetChunkBounds(int chunk, int* minX, int* minY, int* maxX, int* maxY) {
     int cx = chunk % chunksX;
     int cy = chunk / chunksX;
-    *minX = cx * CHUNK_SIZE;
-    *minY = cy * CHUNK_SIZE;
-    *maxX = (cx + 1) * CHUNK_SIZE;
-    *maxY = (cy + 1) * CHUNK_SIZE;
+    *minX = cx * chunkWidth;
+    *minY = cy * chunkHeight;
+    *maxX = (cx + 1) * chunkWidth;
+    *maxY = (cy + 1) * chunkHeight;
     if (*maxX > gridWidth) *maxX = gridWidth;
     if (*maxY > gridHeight) *maxY = gridHeight;
 }
@@ -751,11 +753,12 @@ static int ReconstructLocalPath(int sx, int sy, int gx, int gy, Point* outPath, 
     
     // Expand bounds generously to allow paths that may need to go around obstacles
     // Entrances on chunk borders may need to path through adjacent chunks
-    int expand = CHUNK_SIZE / 2;
-    minX -= expand; if (minX < 0) minX = 0;
-    minY -= expand; if (minY < 0) minY = 0;
-    maxX += expand; if (maxX > gridWidth) maxX = gridWidth;
-    maxY += expand; if (maxY > gridHeight) maxY = gridHeight;
+    int expandX = chunkWidth / 2;
+    int expandY = chunkHeight / 2;
+    minX -= expandX; if (minX < 0) minX = 0;
+    minY -= expandY; if (minY < 0) minY = 0;
+    maxX += expandX; if (maxX > gridWidth) maxX = gridWidth;
+    maxY += expandY; if (maxY > gridHeight) maxY = gridHeight;
     
     // Run A* in this region
     for (int y = minY; y < maxY; y++)

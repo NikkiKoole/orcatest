@@ -90,7 +90,7 @@ void GeneratePerlin(void) {
     }
 
     // Second pass: city walls where noise > 0.5
-    for (int wy = CHUNK_SIZE/2; wy < gridHeight; wy += CHUNK_SIZE / 2) {
+    for (int wy = chunkHeight/2; wy < gridHeight; wy += chunkHeight / 2) {
         for (int wx = 0; wx < gridWidth;) {
             float n = OctavePerlin(wx * scale, wy * scale, 4, 0.5f);
             if (n < 0.5f) { wx += 6; continue; }
@@ -113,7 +113,7 @@ void GeneratePerlin(void) {
     }
 
     // Vertical walls
-    for (int wx = CHUNK_SIZE/2; wx < gridWidth; wx += CHUNK_SIZE / 2) {
+    for (int wx = chunkWidth/2; wx < gridWidth; wx += chunkWidth / 2) {
         for (int wy = 0; wy < gridHeight;) {
             float n = OctavePerlin(wx * scale, wy * scale, 4, 0.5f);
             if (n < 0.5f) { wy += 6; continue; }
@@ -139,7 +139,7 @@ void GeneratePerlin(void) {
 
 void GenerateCity(void) {
     InitGrid();
-    for (int wy = CHUNK_SIZE; wy < gridHeight; wy += CHUNK_SIZE / 2) {
+    for (int wy = chunkHeight; wy < gridHeight; wy += chunkHeight / 2) {
         for (int wx = 0; wx < gridWidth; wx++) {
             int gapPos = GetRandomValue(6, 20);
             int gapSize = GetRandomValue(3, 6);
@@ -150,7 +150,7 @@ void GenerateCity(void) {
             wx += gapPos + gapSize;
         }
     }
-    for (int wx = CHUNK_SIZE; wx < gridWidth; wx += CHUNK_SIZE / 2) {
+    for (int wx = chunkWidth; wx < gridWidth; wx += chunkWidth / 2) {
         for (int wy = 0; wy < gridHeight; wy++) {
             int gapPos = GetRandomValue(6, 20);
             int gapSize = GetRandomValue(3, 6);
@@ -170,7 +170,7 @@ void GenerateCity(void) {
 
 void GenerateMixed(void) {
     InitGrid();
-    int zoneSize = CHUNK_SIZE * 4;
+    int zoneSize = chunkWidth * 4;
     int zonesX = (gridWidth + zoneSize - 1) / zoneSize;
     int zonesY = (gridHeight + zoneSize - 1) / zoneSize;
     int zones[16][16];
@@ -178,7 +178,7 @@ void GenerateMixed(void) {
         for (int zx = 0; zx < zonesX && zx < 16; zx++)
             zones[zy][zx] = GetRandomValue(0, 100) < 50 ? 1 : 0;
 
-    for (int wy = CHUNK_SIZE; wy < gridHeight; wy += CHUNK_SIZE / 2) {
+    for (int wy = chunkHeight; wy < gridHeight; wy += chunkHeight / 2) {
         for (int wx = 0; wx < gridWidth; wx++) {
             int zx = wx / zoneSize, zy = wy / zoneSize;
             if (zx >= 16 || zy >= 16 || zones[zy][zx] == 0) { wx += GetRandomValue(10, 30); continue; }
@@ -194,7 +194,7 @@ void GenerateMixed(void) {
             wx += gapPos + gapSize;
         }
     }
-    for (int wx = CHUNK_SIZE; wx < gridWidth; wx += CHUNK_SIZE / 2) {
+    for (int wx = chunkWidth; wx < gridWidth; wx += chunkWidth / 2) {
         for (int wy = 0; wy < gridHeight; wy++) {
             int zx = wx / zoneSize, zy = wy / zoneSize;
             if (zx >= 16 || zy >= 16 || zones[zy][zx] == 0) { wy += GetRandomValue(10, 30); continue; }
