@@ -1,25 +1,25 @@
 CC := clang
-
-TARGET := crowd
-SRC := crowd-raylib-betterstats5.c
-
-# You can override this when calling make, e.g.:
-#   make MACOSX_DEPLOYMENT_TARGET=14.0
 MACOSX_DEPLOYMENT_TARGET ?= 14.0
 export MACOSX_DEPLOYMENT_TARGET
 
-CFLAGS  := -std=c11 -O2 -Wall -Wextra $(shell pkg-config --cflags raylib)
+CFLAGS  := -std=c11 -O2 -I. -Wall -Wextra
 LDFLAGS := $(shell pkg-config --libs raylib)
 
-all: $(TARGET)
+# Define your targets here
+TARGETS := crowd hpa-star
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# Source files for each target
+crowd_SRC     := crowd-steering/crowd-raylib-betterstats5.c
+hpa-star_SRC  := hpa-star-tests/test7.c hpa-star-tests/terrain.c hpa-star-tests/pathfinding.c
+all: $(TARGETS)
 
-run: $(TARGET)
-	./$(TARGET)
+# Pattern rule: build any target from its corresponding _SRC
+$(TARGETS):
+	$(CC) $(CFLAGS) -o $@ $($@_SRC) $(LDFLAGS)
+
+
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGETS)
 
-.PHONY: all run clean
+.PHONY: all clean run-crowd run-hpa $(TARGETS)

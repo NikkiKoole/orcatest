@@ -26,7 +26,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#define AGENT_COUNT 1000
+#define AGENT_COUNT 100000
 
 #define WORLD_W 4000.0f
 #define WORLD_H 4000.0f
@@ -375,7 +375,7 @@ int main(void) {
              AGENT_COUNT);
 
     InitWindow(screenW, screenH, title);
-     Texture2D agentTex = LoadTexture("agent.png");
+    Texture2D agentTex = LoadTexture("agent.png");
     SetTargetFPS(60);
 
     srand((unsigned)time(NULL));
