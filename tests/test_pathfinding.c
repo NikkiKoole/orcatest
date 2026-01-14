@@ -161,10 +161,66 @@ describe(entrance_building) {
 
 describe(graph_building) {
     it("should create edges between entrances in the same chunk") {
-        InitGridWithSize(TEST_GRID_SIZE, TEST_GRID_SIZE);
+        // 3x3 chunks, each 4x4 cells = 12x12 grid
+        // Chunk layout:
+        //   0 | 1 | 2
+        //  ---+---+---
+        //   3 | 4 | 5
+        //  ---+---+---
+        //   6 | 7 | 8
+        //
+        // The center chunk (4) has entrances on all 4 borders.
+        // All entrances touching chunk 4 should connect to each other.
+        const char* map =
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n"
+            "............\n";
+
+        InitGridFromAsciiWithChunkSize(map, 4, 4);
         BuildEntrances();
         BuildGraph();
-        expect(graphEdgeCount > 0);
+
+        // Find all entrances that touch chunk 4 (center chunk)
+        int chunk4Entrances[32];
+        int chunk4Count = 0;
+        for (int i = 0; i < entranceCount && chunk4Count < 32; i++) {
+            if (entrances[i].chunk1 == 4 || entrances[i].chunk2 == 4) {
+                chunk4Entrances[chunk4Count++] = i;
+            }
+        }
+
+        // Chunk 4 should have entrances on all 4 borders
+        expect(chunk4Count >= 4);
+
+        // Every pair of entrances in chunk 4 should have an edge between them
+        int allConnected = 1;
+        for (int i = 0; i < chunk4Count && allConnected; i++) {
+            for (int j = i + 1; j < chunk4Count && allConnected; j++) {
+                int e1 = chunk4Entrances[i];
+                int e2 = chunk4Entrances[j];
+
+                // Look for edge between them
+                int foundEdge = 0;
+                for (int k = 0; k < graphEdgeCount; k++) {
+                    if ((graphEdges[k].from == e1 && graphEdges[k].to == e2) ||
+                        (graphEdges[k].from == e2 && graphEdges[k].to == e1)) {
+                        foundEdge = 1;
+                        break;
+                    }
+                }
+                if (!foundEdge) allConnected = 0;
+            }
+        }
+        expect(allConnected == 1);
     }
 
     it("edges should be symmetric - cost A to B equals cost B to A") {
