@@ -7,6 +7,11 @@ Entrance entrances[MAX_ENTRANCES];
 int entranceCount = 0;
 GraphEdge graphEdges[MAX_EDGES];
 int graphEdgeCount = 0;
+
+// Adjacency list for fast edge lookup: adjList[node][i] gives edge index
+// adjListCount[node] gives number of edges for that node
+static int adjList[MAX_ENTRANCES][MAX_EDGES_PER_NODE];
+static int adjListCount[MAX_ENTRANCES];
 Point path[MAX_PATH];
 int pathLength = 0;
 int nodesExplored = 0;
@@ -22,6 +27,82 @@ bool chunkDirty[CHUNKS_Y][CHUNKS_X];
 AbstractNode abstractNodes[MAX_ABSTRACT_NODES];
 int abstractPath[MAX_ENTRANCES + 2];
 int abstractPathLength = 0;
+
+// Binary heap for priority queue (used in abstract graph search)
+typedef struct {
+    int* nodes;      // Array of node indices
+    int size;        // Current number of elements
+    int capacity;    // Max capacity
+} BinaryHeap;
+
+static BinaryHeap heap;
+static int heapStorage[MAX_ABSTRACT_NODES];
+
+static void HeapInit(void) {
+    heap.nodes = heapStorage;
+    heap.size = 0;
+    heap.capacity = MAX_ABSTRACT_NODES;
+}
+
+static void HeapSwap(int i, int j) {
+    int temp = heap.nodes[i];
+    heap.nodes[i] = heap.nodes[j];
+    heap.nodes[j] = temp;
+}
+
+static void HeapBubbleUp(int idx) {
+    while (idx > 0) {
+        int parent = (idx - 1) / 2;
+        if (abstractNodes[heap.nodes[idx]].f < abstractNodes[heap.nodes[parent]].f) {
+            HeapSwap(idx, parent);
+            idx = parent;
+        } else {
+            break;
+        }
+    }
+}
+
+static void HeapBubbleDown(int idx) {
+    while (1) {
+        int left = 2 * idx + 1;
+        int right = 2 * idx + 2;
+        int smallest = idx;
+        
+        if (left < heap.size && abstractNodes[heap.nodes[left]].f < abstractNodes[heap.nodes[smallest]].f) {
+            smallest = left;
+        }
+        if (right < heap.size && abstractNodes[heap.nodes[right]].f < abstractNodes[heap.nodes[smallest]].f) {
+            smallest = right;
+        }
+        
+        if (smallest != idx) {
+            HeapSwap(idx, smallest);
+            idx = smallest;
+        } else {
+            break;
+        }
+    }
+}
+
+static void HeapPush(int node) {
+    if (heap.size >= heap.capacity) return;
+    heap.nodes[heap.size] = node;
+    HeapBubbleUp(heap.size);
+    heap.size++;
+}
+
+static int HeapPop(void) {
+    if (heap.size == 0) return -1;
+    int result = heap.nodes[0];
+    heap.size--;
+    if (heap.size > 0) {
+        heap.nodes[0] = heap.nodes[heap.size];
+        HeapBubbleDown(0);
+    }
+    return result;
+}
+
+
 
 // Movement direction mode
 bool use8Dir = false;
@@ -177,6 +258,12 @@ int AStarChunk(int sx, int sy, int gx, int gy, int minX, int minY, int maxX, int
 
 void BuildGraph(void) {
     graphEdgeCount = 0;
+    
+    // Clear adjacency list
+    for (int i = 0; i < entranceCount; i++) {
+        adjListCount[i] = 0;
+    }
+    
     double startTime = GetTime();
     for (int chunk = 0; chunk < CHUNKS_X * CHUNKS_Y; chunk++) {
         int cx = chunk % CHUNKS_X;
@@ -199,8 +286,18 @@ void BuildGraph(void) {
                 int e1 = chunkEnts[i], e2 = chunkEnts[j];
                 int cost = AStarChunk(entrances[e1].x, entrances[e1].y, entrances[e2].x, entrances[e2].y, minX, minY, maxX, maxY);
                 if (cost >= 0 && graphEdgeCount < MAX_EDGES - 1) {
+                    int edgeIdx1 = graphEdgeCount;
+                    int edgeIdx2 = graphEdgeCount + 1;
                     graphEdges[graphEdgeCount++] = (GraphEdge){e1, e2, cost};
                     graphEdges[graphEdgeCount++] = (GraphEdge){e2, e1, cost};
+                    
+                    // Add to adjacency list
+                    if (adjListCount[e1] < MAX_EDGES_PER_NODE) {
+                        adjList[e1][adjListCount[e1]++] = edgeIdx1;
+                    }
+                    if (adjListCount[e2] < MAX_EDGES_PER_NODE) {
+                        adjList[e2][adjListCount[e2]++] = edgeIdx2;
+                    }
                 }
             }
         }
@@ -289,6 +386,8 @@ void RunAStar(void) {
         }
     }
     lastPathTime = (GetTime() - startTime) * 1000.0;
+    TraceLog(LOG_INFO, "A* (%s): time=%.2fms, nodes=%d, path=%d", 
+             use8Dir ? "8-dir" : "4-dir", lastPathTime, nodesExplored, pathLength);
 }
 
 // Get chunk index from cell coordinates
@@ -445,10 +544,6 @@ void RunHPAStar(void) {
         abstractNodes[i] = (AbstractNode){999999, 999999, -1, false, false};
     }
     
-    // Temporarily add start and goal as entrances for position lookup
-    Entrance tempStart = {startPos.x, startPos.y, startChunk, startChunk};
-    Entrance tempGoal = {goalPos.x, goalPos.y, goalChunk, goalChunk};
-    
     // Build temporary edges from start to entrances in its chunk
     // and from goal to entrances in its chunk
     // We'll store these costs in arrays
@@ -502,24 +597,21 @@ void RunHPAStar(void) {
     
     double connectTime = (GetTime() - connectStartTime) * 1000.0;
     
-    // A* on abstract graph
+    // A* on abstract graph using binary heap
     double abstractStartTime = GetTime();
+    HeapInit();
+    
     abstractNodes[startNode].g = 0;
     abstractNodes[startNode].f = Heuristic(startPos.x, startPos.y, goalPos.x, goalPos.y);
     abstractNodes[startNode].open = true;
+    HeapPush(startNode);
     
-    while (1) {
-        // Find best open node
-        int best = -1;
-        int bestF = 999999;
-        for (int i = 0; i < totalNodes; i++) {
-            if (abstractNodes[i].open && abstractNodes[i].f < bestF) {
-                bestF = abstractNodes[i].f;
-                best = i;
-            }
-        }
+    while (heap.size > 0) {
+        // Pop best node from heap
+        int best = HeapPop();
         
-        if (best < 0) break;  // No path
+        // Skip if already closed (duplicate entry in heap)
+        if (abstractNodes[best].closed) continue;
         
         if (best == goalNode) {
             // Reconstruct abstract path
@@ -547,22 +639,22 @@ void RunHPAStar(void) {
                     abstractNodes[neighbor].f = ng + Heuristic(entrances[neighbor].x, entrances[neighbor].y, goalPos.x, goalPos.y);
                     abstractNodes[neighbor].parent = best;
                     abstractNodes[neighbor].open = true;
+                    HeapPush(neighbor);
                 }
             }
         } else if (best < entranceCount) {
-            // Expand from a regular entrance
-            // Check edges in the graph
-            for (int i = 0; i < graphEdgeCount; i++) {
-                if (graphEdges[i].from == best) {
-                    int neighbor = graphEdges[i].to;
-                    if (abstractNodes[neighbor].closed) continue;
-                    int ng = abstractNodes[best].g + graphEdges[i].cost;
-                    if (ng < abstractNodes[neighbor].g) {
-                        abstractNodes[neighbor].g = ng;
-                        abstractNodes[neighbor].f = ng + Heuristic(entrances[neighbor].x, entrances[neighbor].y, goalPos.x, goalPos.y);
-                        abstractNodes[neighbor].parent = best;
-                        abstractNodes[neighbor].open = true;
-                    }
+            // Expand from a regular entrance using adjacency list
+            for (int i = 0; i < adjListCount[best]; i++) {
+                int edgeIdx = adjList[best][i];
+                int neighbor = graphEdges[edgeIdx].to;
+                if (abstractNodes[neighbor].closed) continue;
+                int ng = abstractNodes[best].g + graphEdges[edgeIdx].cost;
+                if (ng < abstractNodes[neighbor].g) {
+                    abstractNodes[neighbor].g = ng;
+                    abstractNodes[neighbor].f = ng + Heuristic(entrances[neighbor].x, entrances[neighbor].y, goalPos.x, goalPos.y);
+                    abstractNodes[neighbor].parent = best;
+                    abstractNodes[neighbor].open = true;
+                    HeapPush(neighbor);
                 }
             }
             // Also check if this entrance can reach goal
@@ -576,6 +668,7 @@ void RunHPAStar(void) {
                         abstractNodes[neighbor].f = ng;  // h=0 at goal
                         abstractNodes[neighbor].parent = best;
                         abstractNodes[neighbor].open = true;
+                        HeapPush(neighbor);
                     }
                 }
             }
