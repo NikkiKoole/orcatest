@@ -13,6 +13,7 @@ Vector2 offset = {0, 0};
 Texture2D texGrass;
 Texture2D texWall;
 bool showGraph = false;
+bool useHPA = true;  // Toggle between HPA* and vanilla A*
 
 void DrawCellGrid(void) {
     Rectangle src = {0, 0, 16, 16};
@@ -142,7 +143,13 @@ void HandleInput(void) {
     if (IsKeyPressed(KEY_FOUR)) GeneratePerlin();
     if (IsKeyPressed(KEY_E)) BuildEntrances();
     if (IsKeyPressed(KEY_B)) BuildGraph();
-    if (IsKeyPressed(KEY_P)) RunAStar();
+    if (IsKeyPressed(KEY_P)) {
+        if (useHPA)
+            RunHPAStar();
+        else
+            RunAStar();
+    }
+    if (IsKeyPressed(KEY_T)) useHPA = !useHPA;  // Toggle pathfinding mode
     if (IsKeyPressed(KEY_V)) showGraph = !showGraph;
     if (IsKeyPressed(KEY_R)) {
         zoom = 1.0f;
@@ -171,9 +178,14 @@ int main(void) {
         DrawEntrances();
         DrawPath();
         DrawFPS(5, 5);
-        DrawText(TextFormat("Entrances: %d | Edges: %d", entranceCount, graphEdgeCount), 5, 25, 16, WHITE);
-        DrawText(TextFormat("Path: %d | Explored: %d | Time: %.2fms", pathLength, nodesExplored, lastPathTime), 5, 45, 16, WHITE);
-        DrawText("S/G+Click | P: Path | 1-4: Gen | E: Entrances | B: Graph | V: Show", 5, screenHeight - 20, 14, GRAY);
+        DrawText(TextFormat("Entrances: %d | Edges: %d | Mode: %s", entranceCount, graphEdgeCount, useHPA ? "HPA*" : "A*"), 5, 25, 16, WHITE);
+        if (useHPA && hpaAbstractTime > 0) {
+            DrawText(TextFormat("Path: %d | Explored: %d | Time: %.2fms (abstract: %.2fms, refine: %.2fms)", 
+                     pathLength, nodesExplored, lastPathTime, hpaAbstractTime, hpaRefinementTime), 5, 45, 16, WHITE);
+        } else {
+            DrawText(TextFormat("Path: %d | Explored: %d | Time: %.2fms", pathLength, nodesExplored, lastPathTime), 5, 45, 16, WHITE);
+        }
+        DrawText("S/G+Click | P: Path | T: Toggle HPA/A* | 1-4: Gen | E: Entrances | B: Graph | V: Show", 5, screenHeight - 20, 14, GRAY);
         EndDrawing();
     }
     UnloadTexture(texGrass);

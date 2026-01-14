@@ -38,10 +38,24 @@ extern Point path[MAX_PATH];
 extern int pathLength;
 extern int nodesExplored;
 extern double lastPathTime;
+extern double hpaAbstractTime;    // Time for abstract graph search
+extern double hpaRefinementTime;  // Time for path refinement (local A*)
 extern Point startPos;
 extern Point goalPos;
 extern AStarNode nodeData[GRID_HEIGHT][GRID_WIDTH];
 extern bool chunkDirty[CHUNKS_Y][CHUNKS_X];
+
+// Abstract graph node for HPA* search
+typedef struct {
+    int g, f;
+    int parent;
+    bool open, closed;
+} AbstractNode;
+
+#define MAX_ABSTRACT_NODES (MAX_ENTRANCES + 2)  // +2 for temp start/goal
+extern AbstractNode abstractNodes[MAX_ABSTRACT_NODES];
+extern int abstractPath[MAX_ENTRANCES + 2];  // path through entrance indices
+extern int abstractPathLength;
 
 // Functions
 int Heuristic(int x1, int y1, int x2, int y2);
@@ -49,6 +63,7 @@ void MarkChunkDirty(int cellX, int cellY);
 void BuildEntrances(void);
 void BuildGraph(void);
 void RunAStar(void);
+void RunHPAStar(void);
 int AStarChunk(int sx, int sy, int gx, int gy, int minX, int minY, int maxX, int maxY);
 
 #endif // PATHFINDING_H
